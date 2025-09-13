@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "echo build step not required"
+    ,"test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["ai", "scam-detection", "phishing", "fake-news"],
   "author": "",
