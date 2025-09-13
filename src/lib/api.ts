@@ -54,7 +54,7 @@ export const analyzeContent = async (
     const prompt = generatePrompt(content, type)
 
     const response = await axios.post<AnalysisResponse>(
-      `${API_BASE_URL}/analyze`,
+      `${API_BASE_URL}/api/analyze`,
       { prompt },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -68,13 +68,13 @@ export const analyzeContent = async (
 
     if (axios.isAxiosError(error)) {
       if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
-        throw new Error('Server is not running. Please start the server with: cd server && npm start')
+        throw new Error('API service is unavailable. Please check your internet connection.')
       } else if (error.response?.status === 429) {
         throw new Error('Rate limit exceeded. Please try again later.')
       } else if (error.response?.status === 500) {
         const errorMsg = (error.response?.data as any)?.error || 'Server error'
         if (typeof errorMsg === 'string' && errorMsg.includes('configuration error')) {
-          throw new Error('Server missing API key. Please configure GEMINI_API_KEY in server/.env')
+          throw new Error('Server missing API key. Please configure GEMINI_API_KEY in environment variables.')
         }
         throw new Error('Server error. Please try again later.')
       } else if (error.code === 'ECONNABORTED') {
@@ -88,7 +88,7 @@ export const analyzeContent = async (
 
 export const checkServerHealth = async (): Promise<boolean> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/health`, { timeout: 5000 })
+    const response = await axios.get(`${API_BASE_URL}/api/health`, { timeout: 5000 })
     return response.status === 200
   } catch (error: unknown) {
     console.error('Health check failed:', error)
