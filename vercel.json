@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://truthcheck-ai-3.onrender.com"
+      "destination": "https://truthcheck-ai-3.onrender.com/$1"
     }
   ]
 }
