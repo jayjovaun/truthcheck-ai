@@ -251,7 +251,7 @@ app.post('/analyze', analysisLimiter, async (req, res) => {
     }
 
     // Prepare the request to Gemini API
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`
     
     const requestBody = {
       contents: [
