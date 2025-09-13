@@ -87,11 +87,25 @@ export const analyzeContent = async (
 }
 
 export const checkServerHealth = async (): Promise<boolean> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/api/health`, { timeout: 5000 })
-    return response.status === 200
-  } catch (error: unknown) {
-    console.error('Health check failed:', error)
-    return false
+  const attempt = async (timeoutMs: number): Promise<boolean> => {
+    try {
+      // Allow non-200s so we can decide whether to retry
+      const response = await axios.get(`${API_BASE_URL}/api/health`, {
+        timeout: timeoutMs,
+        validateStatus: () => true,
+      })
+      return response.status === 200
+    } catch (err) {
+      return false
+    }
   }
+
+  // First try (shorter) to keep UI snappy
+  const okQuick = await attempt(8000)
+  if (okQuick) return true
+
+  // If first probe fails (e.g., Render cold start), wait briefly and retry with longer timeout
+  await new Promise((r) => setTimeout(r, 1500))
+  const okRetry = await attempt(15000)
+  return okRetry
 }
