@@ -144,68 +144,6 @@ const checkDomainReputation = async (urlString) => {
   return { signals, riskDelta }
 }
 
-// ------------------------------
-// External AI service configuration and error mapping
-// ------------------------------
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest'
-const AI_TIMEOUT_MS = Math.max(5000, Number(process.env.AI_TIMEOUT_MS || 25000))
-
-const buildGeminiUrl = (apiKey) =>
-  `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
-
-/**
- * Try to extract a human-friendly message from Gemini error payloads
- */
-const parseGeminiErrorBody = (bodyText) => {
-  try {
-    const json = JSON.parse(bodyText)
-    const message = json?.error?.message || json?.message
-    const reason = json?.error?.details?.[0]?.reason
-    return { message, reason, raw: json }
-  } catch (_) {
-    return { message: undefined, reason: undefined, raw: bodyText }
-  }
-}
-
-/**
- * Map Gemini HTTP status and error payload to our API error response
- */
-const mapGeminiError = (status, bodyText) => {
-  const { message, reason } = parseGeminiErrorBody(bodyText)
-  const details = message || 'External AI returned an error'
-
-  // Default mapping
-  let mappedStatus = 502
-  let error = 'External API failed'
-
-  if (status === 400) {
-    // Common reasons: invalid API key, malformed request
-    mappedStatus = 400
-    if (reason === 'API_KEY_INVALID' || /api key not valid/i.test(details)) {
-      error = 'Invalid API key'
-    } else {
-      error = 'Bad request to external API'
-    }
-  } else if (status === 401) {
-    mappedStatus = 401
-    error = 'Unauthorized to external API'
-  } else if (status === 403) {
-    mappedStatus = 403
-    error = 'External API access forbidden (enable API or billing)'
-  } else if (status === 404) {
-    mappedStatus = 502
-    error = 'External API model not found'
-  } else if (status === 429) {
-    mappedStatus = 429
-    error = 'External API rate limit exceeded'
-  } else if (status >= 500) {
-    mappedStatus = 502
-    error = 'External API service error'
-  }
-
-  return { status: mappedStatus, body: { error, details } }
-}
-
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -313,7 +251,7 @@ app.post('/analyze', analysisLimiter, async (req, res) => {
     }
 
     // Prepare the request to Gemini API
-    const geminiUrl = buildGeminiUrl(process.env.AIzaSyBq_cOOcDfWmHsPSF7FzFOeSOXMbbKHt3w)
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`
     
     const requestBody = {
       contents: [
@@ -351,37 +289,34 @@ app.post('/analyze', analysisLimiter, async (req, res) => {
       ]
     }
 
-    console.log('Sending request to Gemini API...', { model: GEMINI_MODEL, timeoutMs: AI_TIMEOUT_MS })
-
-    // Make request to Gemini API with timeout
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS)
-    let geminiResponse
-    try {
-      geminiResponse = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      })
-    } catch (e) {
-      clearTimeout(timeout)
-      if (e && e.name === 'AbortError') {
-        return res.status(504).json({ error: 'External API timeout', details: `Timed out after ${AI_TIMEOUT_MS}ms` })
-      }
-      throw e
-    }
-    clearTimeout(timeout)
+    console.log('Sending request to Gemini API...')
+    
+    // Make request to Gemini API (Node 18+ global fetch)
+    const geminiResponse = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    })
 
     if (!geminiResponse.ok) {
       const errorText = await geminiResponse.text()
       console.error('Gemini API Error:', {
         status: geminiResponse.status,
         statusText: geminiResponse.statusText,
-        body: errorText,
+        body: errorText
       })
-      const mapped = mapGeminiError(geminiResponse.status, errorText)
-      return res.status(mapped.status).json(mapped.body)
+      
+      if (geminiResponse.status === 429) {
+        return res.status(429).json({ 
+          error: 'AI service rate limit exceeded. Please try again later.' 
+        })
+      }
+      
+      return res.status(500).json({ 
+        error: 'AI service unavailable. Please try again later.' 
+      })
     }
 
     const data = await geminiResponse.json()
@@ -454,12 +389,16 @@ app.post('/analyze', analysisLimiter, async (req, res) => {
 
   } catch (error) {
     console.error('Server Error:', error)
-
-    if (error && (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')) {
-      return res.status(504).json({ error: 'Upstream timeout', details: 'The request took too long' })
+    
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return res.status(504).json({ 
+        error: 'Request timeout. Please try again.' 
+      })
     }
-
-    return res.status(500).json({ error: 'Unhandled server error', details: 'See server logs for more information' })
+    
+    res.status(500).json({ 
+      error: 'Internal server error. Please try again later.' 
+    })
   }
 })
 
